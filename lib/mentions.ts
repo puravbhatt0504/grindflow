@@ -10,6 +10,7 @@ export function extractMentions(text: string): string[] {
   const mentionRegex = /@(\w+)/g
   const mentions: string[] = []
   let match
+  //this is where we commit
 
   while ((match = mentionRegex.exec(text)) !== null) {
     const username = match[1]
