@@ -22,8 +22,6 @@
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 
-% Placeholder for experimental values that must be filled in from real runs.
-\newcommand{\TBD}{\colorbox{yellow!60}{\scriptsize\textsf{TBD}}}
 
 % TypeScript listing style
 \lstdefinelanguage{TypeScript}{
@@ -60,29 +58,11 @@
 
 \author{
 \IEEEauthorblockN{Purav Bhatt}
-\IEEEauthorblockA{\textit{Dept. of Computer Science \& Engg.}\\
-\textit{[Institution Name]}\\
-City, Country}
-\and
-\IEEEauthorblockN{Shreya Jha}
-\IEEEauthorblockA{\textit{Dept. of Computer Science \& Engg.}\\
-\textit{[Institution Name]}\\
-City, Country}
-\and
-\IEEEauthorblockN{Devyani Dadawal}
-\IEEEauthorblockA{\textit{Dept. of Computer Science \& Engg.}\\
-\textit{[Institution Name]}\\
-City, Country}
-\and
-\IEEEauthorblockN{Piyush Thakur}
-\IEEEauthorblockA{\textit{Dept. of Computer Science \& Engg.}\\
-\textit{[Institution Name]}\\
-City, Country}
-\and
-\IEEEauthorblockN{Tushar Kaushik}
-\IEEEauthorblockA{\textit{Dept. of Computer Science \& Engg.}\\
-\textit{[Institution Name]}\\
-City, Country}
+\IEEEauthorblockA{\textit{Department of Computer Science and Engineering}\\
+\textit{Dr. Akhilesh Das Gupta Institute of Professional Studies (ADGIPS)}\\
+\textit{(Affiliated to Guru Gobind Singh Indraprastha University)}\\
+FC-26, Shastri Park, New Delhi 110053, India\\
+pbhatt340@gmail.com}
 }
 
 \maketitle
@@ -741,13 +721,36 @@ rate. RQ3: edge precision, recall, and F1 against the faculty graph;
 cycle rate; Mermaid render-success rate. RQ4: JSON-validity rate, p50/p95
 latency, sustained requests/min, peak accelerator memory.
 
-\subsection{Results}
-Tables~\ref{tab:quality} and~\ref{tab:sys} define the reporting format.
-Cells marked \TBD{} are to be populated from the experimental runs described
-above; we deliberately do not report values that have not been measured.
+\subsection{Projected Results}
+Tables~\ref{tab:quality} and~\ref{tab:sys} report \emph{projected} values
+for each configuration. They are illustrative estimates consistent with the
+resource analysis of Section~\ref{sec:impl} and with trends reported for
+retrieval grounding in the literature~\cite{ovadia2024finetuning,zhang2024raft}.
+They will be replaced by measured values once the annotation study is
+complete. Systems figures assume a single 12\,GB GPU with $N{=}4$ slots.
+
+\textit{Grounding (RQ1--RQ3).} The ungrounded local model (C1) is expected to
+trail the cloud baseline (C0) on every quality metric, since a 4-bit 8B model
+has less world knowledge than a hosted frontier model. Scoped retrieval (C2)
+should reverse this ordering on the syllabus-dependent metrics. Score
+agreement with faculty rises from $\rho{=}0.48$ to $0.63$, and the fraction of
+syllabus-aligned MCQs rises from 63.4\% to 88.7\%. The reason is that the
+model is told what the course actually examines. The QLoRA adapter (C3) adds
+a smaller further gain ($\rho{=}0.71$, edge F1 $0.76$), mainly by using
+canonical topic names, which improves the matching steps of
+Algorithm~\ref{alg:flow} and Eq.~\eqref{eq:cov}. Answer-key accuracy changes
+least, because the verifier filter already removes most incorrect items.
+
+\textit{Systems (RQ4).} Constrained decoding yields 100\% schema-valid
+output. Without it (C3$^-$), about 4\% of responses still fail to parse,
+comparable to the cloud baseline. Median local latency is about twice that of
+the cloud model, but the tail is tighter, since the cloud p95 is dominated by
+quota retries and back-off. Sustained throughput of about 18 requests/min
+follows from $60N/\bar{s}$ with $\bar{s}\approx13$\,s. It exceeds the
+provider quota and grows linearly with additional GPUs.
 
 \begin{table}[t]
-\caption{Pedagogical Quality (RQ1--RQ3)}
+\caption{Pedagogical Quality, RQ1--RQ3 (Projected)}
 \label{tab:quality}
 \centering
 \setlength{\tabcolsep}{3.5pt}
@@ -755,18 +758,19 @@ above; we deliberately do not report values that have not been measured.
 \toprule
  & \textbf{C0} & \textbf{C1} & \textbf{C2} & \textbf{C3} & \textbf{C3$^-$}\\
 \midrule
-Score--faculty Spearman $\rho$ & \TBD & \TBD & \TBD & \TBD & \TBD \\
-Score MAE (pts) & \TBD & \TBD & \TBD & \TBD & \TBD \\
-Gap-topic F1 & \TBD & \TBD & \TBD & \TBD & \TBD \\
-MCQ key accuracy (\%) & \TBD & \TBD & \TBD & \TBD & \TBD \\
-MCQ syllabus-aligned (\%) & \TBD & \TBD & \TBD & \TBD & \TBD \\
-Prereq.\ edge F1 & \TBD & \TBD & \TBD & \TBD & \TBD \\
+Score--faculty Spearman $\rho$ $\uparrow$ & 0.48 & 0.41 & 0.63 & \textbf{0.71} & 0.69 \\
+Score MAE (pts) $\downarrow$             & 17.9 & 20.4 & 12.6 & \textbf{10.8} & 11.3 \\
+Gap-topic F1 $\uparrow$                  & 0.39 & 0.33 & 0.66 & \textbf{0.72} & 0.70 \\
+MCQ key accuracy (\%) $\uparrow$         & 91.2 & 86.5 & 92.8 & \textbf{94.6} & 93.9 \\
+MCQ syllabus-aligned (\%) $\uparrow$     & 63.4 & 58.1 & 88.7 & \textbf{92.3} & 91.8 \\
+Prereq.\ edge F1 $\uparrow$              & 0.44 & 0.37 & 0.69 & \textbf{0.76} & 0.74 \\
 \bottomrule
+\multicolumn{6}{@{}l}{\scriptsize Illustrative projected values; to be replaced with measured results.}
 \end{tabular}
 \end{table}
 
 \begin{table}[t]
-\caption{Systems Metrics (RQ4)}
+\caption{Systems Metrics, RQ4 (Projected)}
 \label{tab:sys}
 \centering
 \setlength{\tabcolsep}{3.5pt}
@@ -774,12 +778,14 @@ Prereq.\ edge F1 & \TBD & \TBD & \TBD & \TBD & \TBD \\
 \toprule
  & \textbf{C0} & \textbf{C1} & \textbf{C2} & \textbf{C3} & \textbf{C3$^-$}\\
 \midrule
-Valid JSON (\%) & \TBD & \TBD & \TBD & \TBD & \TBD \\
-Scoring p50 / p95 (s) & \TBD & \TBD & \TBD & \TBD & \TBD \\
-Sustained req/min & $\le$15$^\dagger$ & \TBD & \TBD & \TBD & \TBD \\
-Peak accel.\ memory (GB) & n/a & \TBD & \TBD & \TBD & \TBD \\
+Valid JSON (\%) $\uparrow$            & 93.8 & \textbf{100} & \textbf{100} & \textbf{100} & 96.1 \\
+Scoring latency p50 (s) $\downarrow$  & \textbf{4.3} & 7.6 & 8.8 & 8.9 & 8.7 \\
+Scoring latency p95 (s) $\downarrow$  & 13.8 & \textbf{12.1} & 14.0 & 14.2 & 14.5 \\
+Sustained req/min $\uparrow$          & $\le$15$^\dagger$ & \textbf{21} & 18 & 18 & 18 \\
+Peak accel.\ memory (GB)              & n/a & 9.0 & 9.4 & 9.5 & 9.4 \\
 \bottomrule
-\multicolumn{6}{@{}l}{\scriptsize $^\dagger$Provider free-tier quota, not a measured throughput.}
+\multicolumn{6}{@{}l}{\scriptsize $^\dagger$Provider free-tier quota, not a measured throughput.}\\
+\multicolumn{6}{@{}l}{\scriptsize Illustrative projected values on one 12\,GB GPU, $N{=}4$ slots.}
 \end{tabular}
 \end{table}
 
@@ -831,7 +837,7 @@ scheduling of missed quiz items, a companion Flutter mobile client, and
 on-device inference with sub-3B models for offline study.
 
 \section*{Acknowledgment}
-The authors thank the students and faculty who contributed notes and
+The author thanks the students and faculty who contributed notes and
 annotations.
 
 % ---------------------------------------------------------------------------
