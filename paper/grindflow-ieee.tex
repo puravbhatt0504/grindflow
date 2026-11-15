@@ -75,11 +75,11 @@ purpose cloud large language models (LLMs) can critique notes and generate
 practice material, but they are not aware of an institution's syllabus,
 they send student documents to third-party servers, and their free tiers impose
 request quotas that cap concurrency. We present \emph{GrindFlow}, a full-stack
-peer learning platform that combines document management, a moderated public
-notes library, real-time study rooms, and three AI services (note scoring,
-study-flow generation, and quiz generation). All three are backed by a
-\emph{Syllabus-grounded Local Inference Engine} (SLIE) rather than a cloud
-API. SLIE couples a 4-bit quantized open-weight 7--8B instruction-tuned model,
+peer learning platform that combines document management, a public notes
+library, chat-based study rooms, and three AI services (note scoring,
+study-flow generation, and quiz generation). We then propose a design in
+which all three are served by a \emph{Syllabus-grounded Local Inference
+Engine} (SLIE) instead of a cloud API. SLIE couples a 4-bit quantized open-weight 7--8B instruction-tuned model,
 domain-adapted with QLoRA on syllabus-derived instruction data, with a
 hierarchical syllabus knowledge base (degree $\rightarrow$ year $\rightarrow$
 subject $\rightarrow$ unit $\rightarrow$ topic) queried through hybrid lexical and
@@ -90,8 +90,9 @@ prerequisite-graph construction for study flows, and a verifier-filtered
 pipeline for multiple-choice question generation. We analyze the memory and
 throughput envelope of the deployment, showing that the complete model plus
 four concurrent 8K-token contexts fits in under 10\,GB of accelerator memory,
-and we define an evaluation protocol that compares the system against the
-cloud baseline it replaces.
+and we specify an evaluation protocol for comparing the design against the
+cloud baseline it replaces. This paper contributes the design and its
+analysis; empirical evaluation is left to future work.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -128,8 +129,8 @@ DPDP Act~\cite{dpdp2023}.
 \item \textbf{Quota-bound concurrency.} The free tier allowed roughly
 15~requests per minute in total. The application had to add a per-user
 token-bucket limiter (burst~3, 6~requests/min) and a multi-model retry
-cascade, which in practice supported only two or three simultaneously active
-users.
+cascade. The code's own comments size this for only three or four users
+sharing the quota.
 \item \textbf{Unstructured output.} The model returned free text that was
 supposed to contain JSON. The server had to strip Markdown fences, extract
 substrings between the first ``\{'' and the last ``\}'', and fall back to a
@@ -138,7 +139,11 @@ sentinel score of~0 when parsing failed.
 
 This paper redesigns GrindFlow's AI layer around a locally hosted model that
 \emph{contains the syllabus}, both through parametric adaptation and through
-an explicit, queryable knowledge base. The contributions are:
+an explicit, queryable knowledge base. The platform described in
+Section~\ref{sec:system} is implemented and deployed. The local inference
+engine and the algorithms of Sections~\ref{sec:slie}--\ref{sec:features}
+are a proposed design, analyzed but not yet empirically evaluated. The
+contributions are:
 
 \begin{itemize}
 \item A complete system architecture for a peer learning platform
@@ -153,7 +158,8 @@ it exposes the same function signature as the client it replaces.
 weighted coverage/redundancy score for notes, a validated prerequisite DAG
 for study flows, and verifier-filtered MCQ generation weighted by syllabus
 marks.
-\item A resource analysis and an evaluation protocol
+\item An analytical resource model (memory, throughput, and cost) and an
+evaluation protocol
 (Sections~\ref{sec:impl}--\ref{sec:eval}) for comparing the local system
 against the cloud baseline it replaces.
 \end{itemize}
@@ -410,7 +416,7 @@ before the request is sent, by a counting semaphore sized to the server's
 $N$ slots. Requests that cannot obtain a slot within a short deadline return
 HTTP~503 with a \texttt{Retry-After} header.
 
-\begin{lstlisting}[caption={SLIE client (abridged). The signature matches the replaced cloud client, so each route handler changes by one import.},label={lst:client},float=t]
+\begin{lstlisting}[caption={Proposed SLIE client (abridged). The signature matches the replaced cloud client, so each route handler changes by one import.},label={lst:client},float=t]
 export async function callLocalLLM(
   system: string, user: string, o: LocalOpts = {}
 ): Promise<string> {
@@ -682,8 +688,12 @@ every document-scoped route prevent one user from triggering analysis of
 another user's file.
 
 % ---------------------------------------------------------------------------
-\section{Evaluation Protocol}
+\section{Proposed Evaluation Protocol}
 \label{sec:eval}
+
+The protocol below is designed so that each AI feature can be compared against
+the cloud baseline it replaces, and so that the contribution of each SLIE
+component can be isolated by ablation.
 
 \subsection{Research Questions}
 \begin{description}
@@ -704,14 +714,15 @@ prompts. \textbf{C1}: local Q4 model, no retrieval, no adapter.
 (full SLIE). \textbf{C3$^-$}: C3 without constrained decoding (ablation).
 
 \subsection{Data and Annotation}
-The corpus consists of student-contributed PDF notes collected with informed
-consent across $S$ subjects of one degree program, each with its official
-syllabus. Two or more faculty members per subject rate each document for exam
-usefulness on a 0--100 scale, author the unit prerequisite graph, and judge
-generated MCQs for correctness, syllabus alignment, and distractor
-plausibility. Inter-rater agreement is reported as Krippendorff's $\alpha$.
-Coverage threshold $\tau$ and the weights in Eq.~\eqref{eq:score} are tuned on
-a 20\% development split and frozen before testing.
+The planned corpus consists of student-contributed PDF notes, collected with
+informed consent, across several subjects of one degree program, each with its
+official syllabus. Two or more faculty members per subject will rate each
+document for exam usefulness on a 0--100 scale, author the unit prerequisite
+graph, and judge generated MCQs for correctness, syllabus alignment, and
+distractor plausibility. Inter-rater agreement will be reported as
+Krippendorff's $\alpha$. The coverage threshold $\tau$ and the weights in
+Eq.~\eqref{eq:score} will be tuned on a 20\% development split and frozen
+before testing, so that test results are not fitted to the test set.
 
 \subsection{Metrics}
 RQ1: Spearman $\rho$ and mean absolute error between $S$ and the mean faculty
@@ -721,73 +732,20 @@ rate. RQ3: edge precision, recall, and F1 against the faculty graph;
 cycle rate; Mermaid render-success rate. RQ4: JSON-validity rate, p50/p95
 latency, sustained requests/min, peak accelerator memory.
 
-\subsection{Projected Results}
-Tables~\ref{tab:quality} and~\ref{tab:sys} report \emph{projected} values
-for each configuration. They are illustrative estimates consistent with the
-resource analysis of Section~\ref{sec:impl} and with trends reported for
-retrieval grounding in the literature~\cite{ovadia2024finetuning,zhang2024raft}.
-They will be replaced by measured values once the annotation study is
-complete. Systems figures assume a single 12\,GB GPU with $N{=}4$ slots.
-
-\textit{Grounding (RQ1--RQ3).} The ungrounded local model (C1) is expected to
-trail the cloud baseline (C0) on every quality metric, since a 4-bit 8B model
-has less world knowledge than a hosted frontier model. Scoped retrieval (C2)
-should reverse this ordering on the syllabus-dependent metrics. Score
-agreement with faculty rises from $\rho{=}0.48$ to $0.63$, and the fraction of
-syllabus-aligned MCQs rises from 63.4\% to 88.7\%. The reason is that the
-model is told what the course actually examines. The QLoRA adapter (C3) adds
-a smaller further gain ($\rho{=}0.71$, edge F1 $0.76$), mainly by using
-canonical topic names, which improves the matching steps of
-Algorithm~\ref{alg:flow} and Eq.~\eqref{eq:cov}. Answer-key accuracy changes
-least, because the verifier filter already removes most incorrect items.
-
-\textit{Systems (RQ4).} Constrained decoding yields 100\% schema-valid
-output. Without it (C3$^-$), about 4\% of responses still fail to parse,
-comparable to the cloud baseline. Median local latency is about twice that of
-the cloud model, but the tail is tighter, since the cloud p95 is dominated by
-quota retries and back-off. Sustained throughput of about 18 requests/min
-follows from $60N/\bar{s}$ with $\bar{s}\approx13$\,s. It exceeds the
-provider quota and grows linearly with additional GPUs.
-
-\begin{table}[t]
-\caption{Pedagogical Quality, RQ1--RQ3 (Projected)}
-\label{tab:quality}
-\centering
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{@{}lccccc@{}}
-\toprule
- & \textbf{C0} & \textbf{C1} & \textbf{C2} & \textbf{C3} & \textbf{C3$^-$}\\
-\midrule
-Score--faculty Spearman $\rho$ $\uparrow$ & 0.48 & 0.41 & 0.63 & \textbf{0.71} & 0.69 \\
-Score MAE (pts) $\downarrow$             & 17.9 & 20.4 & 12.6 & \textbf{10.8} & 11.3 \\
-Gap-topic F1 $\uparrow$                  & 0.39 & 0.33 & 0.66 & \textbf{0.72} & 0.70 \\
-MCQ key accuracy (\%) $\uparrow$         & 91.2 & 86.5 & 92.8 & \textbf{94.6} & 93.9 \\
-MCQ syllabus-aligned (\%) $\uparrow$     & 63.4 & 58.1 & 88.7 & \textbf{92.3} & 91.8 \\
-Prereq.\ edge F1 $\uparrow$              & 0.44 & 0.37 & 0.69 & \textbf{0.76} & 0.74 \\
-\bottomrule
-\multicolumn{6}{@{}l}{\scriptsize Illustrative projected values; to be replaced with measured results.}
-\end{tabular}
-\end{table}
-
-\begin{table}[t]
-\caption{Systems Metrics, RQ4 (Projected)}
-\label{tab:sys}
-\centering
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{@{}lccccc@{}}
-\toprule
- & \textbf{C0} & \textbf{C1} & \textbf{C2} & \textbf{C3} & \textbf{C3$^-$}\\
-\midrule
-Valid JSON (\%) $\uparrow$            & 93.8 & \textbf{100} & \textbf{100} & \textbf{100} & 96.1 \\
-Scoring latency p50 (s) $\downarrow$  & \textbf{4.3} & 7.6 & 8.8 & 8.9 & 8.7 \\
-Scoring latency p95 (s) $\downarrow$  & 13.8 & \textbf{12.1} & 14.0 & 14.2 & 14.5 \\
-Sustained req/min $\uparrow$          & $\le$15$^\dagger$ & \textbf{21} & 18 & 18 & 18 \\
-Peak accel.\ memory (GB)              & n/a & 9.0 & 9.4 & 9.5 & 9.4 \\
-\bottomrule
-\multicolumn{6}{@{}l}{\scriptsize $^\dagger$Provider free-tier quota, not a measured throughput.}\\
-\multicolumn{6}{@{}l}{\scriptsize Illustrative projected values on one 12\,GB GPU, $N{=}4$ slots.}
-\end{tabular}
-\end{table}
+\subsection{Hypotheses}
+From the design and prior work on retrieval grounding~\cite{ovadia2024finetuning,zhang2024raft},
+we expect the following. (H1) C1 will trail C0 on quality metrics, since a
+4-bit 7--8B model has less general knowledge than a hosted model. (H2) Scoped
+retrieval (C2) will close or reverse this gap on the syllabus-dependent
+metrics (score agreement, gap-topic F1, syllabus alignment, edge F1), because
+the model is told what the course examines. (H3) The adapter (C3) will add a
+smaller gain, mainly through canonical topic naming that improves the matching
+steps of Eq.~\eqref{eq:cov} and Algorithm~\ref{alg:flow}. (H4) C1--C3 will
+produce schema-valid output in all cases by construction, and C3$^-$ will not.
+(H5) Sustained throughput will follow $60N/\bar{s}$
+(Section~\ref{sec:impl}) and will no longer be bounded by a provider quota.
+Each hypothesis maps to one research question and is falsifiable with the
+metrics above.
 
 \subsection{Threats to Validity}
 Faculty ratings of ``usefulness'' are subjective and course-specific.
@@ -823,22 +781,23 @@ channel such as WebSockets or server-sent events.
 
 % ---------------------------------------------------------------------------
 \section{Conclusion and Future Work}
-We presented GrindFlow, a peer learning platform whose AI services are
-grounded in the institution's own syllabus and run entirely on a locally
-hosted, quantized open-weight model. Explicit curriculum structure
+We presented GrindFlow, a peer learning platform, and a design that grounds
+its AI services in the institution's own syllabus and runs them entirely on a
+locally hosted, quantized open-weight model. Explicit curriculum structure
 (weightages, learning outcomes, and prerequisite edges) turns three loosely
 specified LLM tasks into partly deterministic, auditable computations.
 Schema-constrained decoding removes a whole class of parsing failures, and
 local serving replaces a hard provider quota with a capacity that grows with
 hardware. Our analysis shows that the full stack fits on a single commodity
-GPU. Future work includes completing the evaluation of
+GPU. Future work includes implementing SLIE in the deployed platform and
+carrying out the evaluation of
 Section~\ref{sec:eval}, adding OCR for handwritten notes, spaced-repetition
 scheduling of missed quiz items, a companion Flutter mobile client, and
 on-device inference with sub-3B models for offline study.
 
 \section*{Acknowledgment}
-The author thanks the students and faculty who contributed notes and
-annotations.
+The author thanks Shreya Jha, Devyani Dadawal, Piyush Thakur, and Tushar
+Kaushik, who co-developed the GrindFlow platform.
 
 % ---------------------------------------------------------------------------
 \begin{thebibliography}{99}
