@@ -2,3 +2,5 @@
 *.log
 *.out
 *.synctex.gz
+# Filled personal forms (sent to the user directly, not versioned)
+IJPREMS-copyright-form-filled.pdf
