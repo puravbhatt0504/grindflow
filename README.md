@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1>GrindFlowR</h1>
+<h1>GrindFlow</h1>
 
 Peer‑powered study notes platform built with Next.js, TypeScript, Tailwind, Neon, Drizzle, Clerk, and UploadThing.
 
@@ -19,15 +19,36 @@ Peer‑powered study notes platform built with Next.js, TypeScript, Tailwind, Ne
 
 </div>
 
+## What it is
+
+Students upload their notes as PDFs. GrindFlow scores and critiques them with Gemini, turns them into quizzes and step-by-step study flows, and lets students publish good notes to a shared public library and discuss them in chat rooms.
+
+Built by a team of five (see [Team](#-team)).
+
 ## ✨ Features
 
-- AI‑assisted note scoring & suggestions (Gemini 2.5)
-- Study flows with adaptive steps
-- Auto‑generated quizzes and practice
-- Document upload, management, and public library
-- Clerk auth (Google OAuth + email)
-- Per-user rate limiting with shared Gemini retry helper
-- Minimal, modern UI with tasteful animations
+- **AI note review:** `/api/analyze` extracts the PDF text once (cached in `documents_text`), then asks Gemini for a score and a written critique, stored with the document.
+- **Quizzes and study flows:** `/api/quiz` and `/api/studyflow` generate practice questions and adaptive study steps from the same cached text.
+- **Public library:** submit, browse, view and download notes others have shared.
+- **Chat:** rooms, `@username` mentions and notifications (`/api/chat/*`, `/api/notifications`).
+- **Auth and profiles:** Clerk (Google OAuth + email), usernames, Clerk webhook to sync users.
+- **Resilient AI calls:** `lib/gemini.ts` retries with backoff (0.5 s → 6 s), falls back across Gemini models, and stops early on non-retryable errors; `lib/rate-limit.ts` is a per-user token bucket on every AI route (`429` with rate-limit headers).
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    U[Browser] --> N["Next.js 14 App Router<br/>server components + route handlers"]
+    N --> C[Clerk auth]
+    N -- upload --> UT[UploadThing storage]
+    N --> AI["AI routes<br/>analyze · quiz · studyflow"]
+    AI -- "pdf-parse once,<br/>text cached" --> DB
+    AI -- "retry + model fallback,<br/>per-user rate limit" --> G[Gemini 2.5 Flash / Flash-Lite]
+    N --> DB[("Neon Postgres via Drizzle<br/>users · documents · library · chat · notifications")]
+    C -- webhook --> N
+```
+
+The rate limiter is in memory, so on serverless it limits per instance rather than globally; a shared store (e.g. Redis) would be the next step under real load.
 
 ## 📦 Tech Stack
 
@@ -111,24 +132,24 @@ npm run dev
 ```
 grindflow/
 ├── app/
-│   ├── api/          # API routes (studyflow, uploadthing, etc.)
-│   ├── login/        # Login page
-│   ├── signin/       # Sign up page
-│   ├── layout.tsx    # Root layout
-│   ├── page.tsx      # Dashboard page
-│   └── globals.css   # Global styles
-├── components/       # React components
-│   ├── Sidebar.tsx
-│   ├── Header.tsx
-│   ├── Footer.tsx
-│   └── about/TeamGrid.tsx
-├── drizzle/          # Drizzle migrations
+│   ├── api/
+│   │   ├── analyze/ quiz/ studyflow/      # AI routes (Gemini)
+│   │   ├── documents/ text/ uploadthing/  # uploads and extracted text
+│   │   ├── public-library/                # submit, view, download
+│   │   ├── chat/ notifications/           # rooms, messages, mentions
+│   │   ├── user/ webhooks/clerk/          # usernames, Clerk user sync
+│   │   └── health/
+│   ├── dashboard/ explore/ chat/ public-upload/ onboarding/ about/
+│   ├── login/ signin/ sso-callback/       # Clerk auth pages
+│   └── layout.tsx, page.tsx
+├── components/
+├── drizzle/                               # migrations
 ├── lib/
-│   ├── db.ts         # Neon + Drizzle client
-│   ├── gemini.ts     # Gemini retry helper
-│   └── api.ts        # API helpers
-├── drizzle.config.ts
-└── public/           # Static assets
+│   ├── db/                                # Neon + Drizzle client and schema
+│   ├── gemini.ts                          # retry, backoff, model fallback
+│   ├── rate-limit.ts                      # per-user token bucket
+│   └── auth.ts, text.ts, mentions.ts, uploadthing.ts
+└── public/
 ```
 
 ## 🛡️ Image domains
@@ -162,50 +183,3 @@ External images used by Next/Image are configured in `next.config.js`:
 ## License
 
 ISC
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
